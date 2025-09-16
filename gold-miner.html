@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>黄金矿工</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: linear-gradient(135deg, #87CEEB, #4682B4);
+            font-family: 'Arial', sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+            overflow: hidden;
+        }
+
+        .game-container {
+            background: #8B4513;
+            border: 5px solid #654321;
+            border-radius: 10px;
+            box-shadow: 0 10px 20px rgba(0,0,0,0.3);
+            margin: 20px;
+            position: relative;
+        }
+
+        canvas {
+            display: block;
+            background: linear-gradient(to bottom, #87CEEB 0%, #DEB887 30%, #CD853F 100%);
+            border-radius: 5px;
+        }
+
+        .ui {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: white;
+            font-size: 18px;
+            font-weight: bold;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.7);
+            z-index: 10;
+        }
+
+        .controls {
+            margin-top: 10px;
+            text-align: center;
+            color: white;
+            font-size: 14px;
+        }
+
+        .start-screen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.8);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 100;
+        }
+
+        .start-screen h1 {
+            color: #FFD700;
+            font-size: 36px;
+            margin-bottom: 20px;
+            text-shadow: 3px 3px 6px rgba(0,0,0,0.8);
+        }
+
+        .start-button {
+            background: linear-gradient(45deg, #FFD700, #FFA500);
+            border: none;
+            padding: 15px 30px;
+            font-size: 20px;
+            font-weight: bold;
+            border-radius: 10px;
+            cursor: pointer;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+            transition: transform 0.2s;
+        }
+
+        .start-button:hover {
+            transform: scale(1.05);
+        }
+
+        .game-over {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0,0,0,0.9);
+            color: white;
+            padding: 30px;
+            border-radius: 15px;
+            text-align: center;
+            display: none;
+            z-index: 200;
+        }
+
+        .game-over h2 {
+            color: #FFD700;
+            margin-bottom: 15px;
+        }
+    </style>
+</head>
+<body>
+    <div class="game-container">
+        <div class="start-screen" id="startScreen">
+            <h1>🏆 黄金矿工 🏆</h1>
+            <p style="color: white; margin-bottom: 20px;">点击鼠标控制钩子抓取黄金!</p>
+            <button class="start-button" onclick="startGame()">开始游戏</button>
+        </div>
+
+        <div class="ui">
+            <div>💰 得分: <span id="score">0</span></div>
+            <div>⏰ 时间: <span id="time">60</span>s</div>
+            <div>🎯 目标: <span id="target">500</span></div>
+        </div>
+
+        <canvas id="gameCanvas" width="800" height="600"></canvas>
+
+        <div class="game-over" id="gameOver">
+            <h2>游戏结束</h2>
+            <p>最终得分: <span id="finalScore">0</span></p>
+            <button class="start-button" onclick="restartGame()">重新开始</button>
+        </div>
+    </div>
+
+    <div class="controls">
+        <p>🖱️ 点击鼠标控制钩子 | 💎 大金块=100分 | 💰 小金块=50分 | 💍 宝石=200分 | 🪨 石头=10分</p>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // 游戏状态
+        let gameState = 'menu'; // menu, playing, gameOver
+        let score = 0;
+        let timeLeft = 60;
+        let target = 500;
+        let gameTimer;
+
+        // 矿工和钩子
+        const miner = {
+            x: canvas.width / 2,
+            y: 80,
+            width: 60,
+            height: 60
+        };
+
+        const hook = {
+            x: miner.x,
+            y: miner.y + 30,
+            angle: 0,
+            length: 50,
+            speed: 2,
+            isExtending: false,
+            isRetracting: false,
+            direction: 1,
+            maxLength: 400,
+            item: null
+        };
+
+        // 游戏物品
+        let items = [];
+
+        // 物品类型
+        const itemTypes = {
+            bigGold: { value: 100, size: 40, color: '#FFD700', weight: 3, emoji: '💎' },
+            smallGold: { value: 50, size: 25, color: '#FFA500', weight: 1, emoji: '💰' },
+            gem: { value: 200, size: 30, color: '#FF69B4', weight: 2, emoji: '💍' },
+            rock: { value: 10, size: 35, color: '#808080', weight: 5, emoji: '🪨' }
+        };
+
+        // 初始化游戏
+        function initGame() {
+            score = 0;
+            timeLeft = 60;
+            items = [];
+            hook.angle = 0;
+            hook.length = 50;
+            hook.isExtending = false;
+            hook.isRetracting = false;
+            hook.item = null;
+
+            // 生成随机物品
+            generateItems();
+
+            // 更新UI
+            updateUI();
+        }
+
+        // 生成随机物品
+        function generateItems() {
+            items = [];
+            const types = Object.keys(itemTypes);
+
+            for (let i = 0; i < 15; i++) {
+                const type = types[Math.floor(Math.random() * types.length)];
+                const item = {
+                    type: type,
+                    x: Math.random() * (canvas.width - 100) + 50,
+                    y: Math.random() * 300 + 200,
+                    ...itemTypes[type]
+                };
+                items.push(item);
+            }
+        }
+
+        // 开始游戏
+        function startGame() {
+            document.getElementById('startScreen').style.display = 'none';
+            document.getElementById('gameOver').style.display = 'none';
+            gameState = 'playing';
+            initGame();
+
+            // 启动游戏定时器
+            gameTimer = setInterval(() => {
+                timeLeft--;
+                updateUI();
+
+                if (timeLeft <= 0) {
+                    endGame();
+                }
+            }, 1000);
+
+            gameLoop();
+        }
+
+        // 重新开始游戏
+        function restartGame() {
+            clearInterval(gameTimer);
+            startGame();
+        }
+
+        // 结束游戏
+        function endGame() {
+            clearInterval(gameTimer);
+            gameState = 'gameOver';
+            document.getElementById('finalScore').textContent = score;
+            document.getElementById('gameOver').style.display = 'block';
+        }
+
+        // 更新UI
+        function updateUI() {
+            document.getElementById('score').textContent = score;
+            document.getElementById('time').textContent = timeLeft;
+            document.getElementById('target').textContent = target;
+        }
+
+        // 钩子摆动
+        function updateHook() {
+            if (!hook.isExtending && !hook.isRetracting) {
+                hook.angle += hook.direction * 0.01;
+                if (hook.angle >= Math.PI / 2.2) {
+                    hook.angle = Math.PI / 2.2;
+                    hook.direction = -1;
+                } else if (hook.angle <= -Math.PI / 2.2) {
+                    hook.angle = -Math.PI / 2.2;
+                    hook.direction = 1;
+                }
+            }
+
+            if (hook.isExtending) {
+                hook.length += hook.speed;
+                if (hook.length >= hook.maxLength) {
+                    hook.isExtending = false;
+                    hook.isRetracting = true;
+                }
+
+                // 检查碰撞
+                checkCollisions();
+            }
+
+            if (hook.isRetracting) {
+                let speed = hook.speed;
+                if (hook.item) {
+                    speed = hook.speed / hook.item.weight;
+                }
+                hook.length -= speed;
+
+                if (hook.length <= 50) {
+                    hook.length = 50;
+                    hook.isRetracting = false;
+
+                    // 如果有物品，添加分数并移除物品
+                    if (hook.item) {
+                        score += hook.item.value;
+                        const index = items.indexOf(hook.item);
+                        if (index > -1) {
+                            items.splice(index, 1);
+                        }
+                        hook.item = null;
+                        updateUI();
+
+                        // 检查胜利条件
+                        if (score >= target) {
+                            alert('恭喜！你达到了目标分数！');
+                            endGame();
+                        }
+                    }
+                }
+            }
+
+            // 更新钩子位置
+            hook.x = miner.x + Math.sin(hook.angle) * hook.length;
+            hook.y = miner.y + 30 + Math.cos(hook.angle) * hook.length;
+        }
+
+        // 检查碰撞
+        function checkCollisions() {
+            if (hook.item) return;
+
+            for (let item of items) {
+                const dx = hook.x - item.x;
+                const dy = hook.y - item.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+
+                if (distance < item.size / 2 + 10) {
+                    hook.item = item;
+                    hook.isExtending = false;
+                    hook.isRetracting = true;
+                    break;
+                }
+            }
+        }
+
+        // 绘制游戏
+        function draw() {
+            // 清空画布
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // 绘制背景土层
+            ctx.fillStyle = '#8B4513';
+            ctx.fillRect(0, 150, canvas.width, canvas.height - 150);
+
+            // 绘制矿工
+            ctx.fillStyle = '#FF6B35';
+            ctx.fillRect(miner.x - 30, miner.y - 30, 60, 60);
+
+            // 绘制矿工帽子
+            ctx.fillStyle = '#FFD700';
+            ctx.fillRect(miner.x - 25, miner.y - 40, 50, 15);
+
+            // 绘制眼睛
+            ctx.fillStyle = 'white';
+            ctx.fillRect(miner.x - 15, miner.y - 20, 8, 8);
+            ctx.fillRect(miner.x + 7, miner.y - 20, 8, 8);
+            ctx.fillStyle = 'black';
+            ctx.fillRect(miner.x - 12, miner.y - 17, 3, 3);
+            ctx.fillRect(miner.x + 10, miner.y - 17, 3, 3);
+
+            // 绘制钩子线
+            ctx.strokeStyle = '#654321';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.moveTo(miner.x, miner.y + 30);
+            ctx.lineTo(hook.x, hook.y);
+            ctx.stroke();
+
+            // 绘制钩子
+            ctx.fillStyle = '#C0C0C0';
+            ctx.beginPath();
+            ctx.arc(hook.x, hook.y, 8, 0, Math.PI * 2);
+            ctx.fill();
+
+            // 绘制钩子尖端
+            ctx.fillStyle = '#808080';
+            ctx.beginPath();
+            ctx.arc(hook.x, hook.y + 8, 4, 0, Math.PI * 2);
+            ctx.fill();
+
+            // 绘制物品
+            for (let item of items) {
+                if (item === hook.item) continue;
+
+                ctx.fillStyle = item.color;
+                ctx.beginPath();
+                ctx.arc(item.x, item.y, item.size / 2, 0, Math.PI * 2);
+                ctx.fill();
+
+                // 绘制物品emoji
+                ctx.font = `${item.size}px Arial`;
+                ctx.textAlign = 'center';
+                ctx.fillText(item.emoji, item.x, item.y + item.size / 4);
+            }
+
+            // 绘制被钩住的物品
+            if (hook.item) {
+                const item = hook.item;
+                ctx.fillStyle = item.color;
+                ctx.beginPath();
+                ctx.arc(hook.x, hook.y + item.size / 2, item.size / 2, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.font = `${item.size}px Arial`;
+                ctx.textAlign = 'center';
+                ctx.fillText(item.emoji, hook.x, hook.y + item.size / 2 + item.size / 4);
+            }
+        }
+
+        // 游戏主循环
+        function gameLoop() {
+            if (gameState === 'playing') {
+                updateHook();
+                draw();
+                requestAnimationFrame(gameLoop);
+            }
+        }
+
+        // 鼠标点击事件
+        canvas.addEventListener('click', () => {
+            if (gameState === 'playing' && !hook.isExtending && !hook.isRetracting) {
+                hook.isExtending = true;
+            }
+        });
+
+        // 初始化
+        draw();
+    </script>
+</body>
+</html>
